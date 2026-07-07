@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+flate2 = { version = "1.1.9", default-features = false, features = ["zlib-rs"] }
+quick-xml = "0.41.0"
+thiserror = "2.0.18"
+zip = "8.6.0"
