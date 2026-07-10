@@ -6,7 +6,7 @@ use std::result::Result;
 use quick_xml::events::Event;
 use zip::{ZipArchive, result::ZipError};
 
-use crate::Error::{MissingRootPart, MissingFile, XmlFormat};
+use crate::Error::{InvalidContentType, MissingFile, MissingRootPart, XmlFormat};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -83,15 +83,21 @@ pub fn open(path: &Path) -> Result<ThreeMFContainer, Error> {
         buf.clear();
     }
     drop(xml_reader);
-    validate_part_type(&mut zip_archive, &target_path)?;
+
+    if !validate_part_type(&mut zip_archive, &target_path)? {
+        return Err(InvalidContentType(target_path));
+    }
+
     Ok(ThreeMFContainer {
         archive: zip_archive,
         root_part_path: target_path,
     })
 }
 
-fn validate_part_type(zipfile: &mut ZipArchive<BufReader<File>>, root_part_path: &str) -> Result<bool, Error>
-{
+fn validate_part_type(
+    zipfile: &mut ZipArchive<BufReader<File>>,
+    root_part_path: &str,
+) -> Result<bool, Error> {
     const CONTENT_TYPES_ENTRY: &str = "[Content_Types].xml";
     const DEFAULT_TAG: &[u8] = b"Default";
     const EXTENSION_ATTR: &[u8] = b"Extension";
@@ -104,28 +110,35 @@ fn validate_part_type(zipfile: &mut ZipArchive<BufReader<File>>, root_part_path:
     };
     let mut xml_reader = quick_xml::Reader::from_reader(BufReader::new(content_types_file));
     let mut buf = Vec::new();
-    let extension = Path::new(&root_part_path).extension().and_then(|ext| ext.to_str()).unwrap_or_default();
+    let extension = Path::new(&root_part_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default();
     let mut valid_content_type = false;
     loop {
         match xml_reader.read_event_into(&mut buf) {
             Ok(Event::Empty(e)) | Ok(Event::Start(e)) => {
                 if e.name().as_ref() == DEFAULT_TAG {
-                    let ext_matches = e.attributes()
-                    .flatten()
-                    .any(|attr| (attr.key.as_ref() == EXTENSION_ATTR) && (attr.value.as_ref() == extension.as_bytes()));
+                    let ext_matches = e.attributes().flatten().any(|attr| {
+                        (attr.key.as_ref() == EXTENSION_ATTR)
+                            && (attr.value.as_ref() == extension.as_bytes())
+                    });
 
-                    if ext_matches && let Some(content_type_attr) = e.attributes().flatten()
-                        .find(|attr| attr.key.as_ref() == CONTENT_TYPE_ATTR) {
+                    if ext_matches
+                        && let Some(content_type_attr) = e
+                            .attributes()
+                            .flatten()
+                            .find(|attr| attr.key.as_ref() == CONTENT_TYPE_ATTR)
+                    {
                         valid_content_type = content_type_attr.value.as_ref() == MODEL_CONTENT_TYPE;
                         println!("The 3mf root_part path has the correct content type");
-                        return Ok(valid_content_type)
+                        return Ok(valid_content_type);
                     }
                 }
-            },
+            }
             Ok(Event::Eof) => break,
             Err(e) => return Err(XmlFormat(e)),
             _ => (),
-
         }
         buf.clear();
     }
