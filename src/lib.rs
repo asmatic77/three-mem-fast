@@ -77,7 +77,10 @@ pub fn open(path: &Path) -> Result<ThreeMFContainer, Error> {
         buf.clear();
     }
     drop(xml_reader);
-    if target_path.is_empty() { return Err(MissingRootPart); }
+    if target_path.is_empty() {
+        return Err(MissingRootPart);
+    }
+    validate_part_type(&mut zip_archive, &target_path)?;
 
     Ok(ThreeMFContainer {
         archive: zip_archive,
@@ -122,7 +125,6 @@ fn validate_part_type(
                         } else {
                             return Err(InvalidContentType(root_part_path.to_string()));
                         }
-                        
                     }
                 }
             }
@@ -151,5 +153,4 @@ mod tests {
         let container = open(Path::new("fixtures/core/box.3mf")).unwrap();
         assert_eq!(container.root_part_path, "/3D/3dmodel.model");
     }
-
 }
