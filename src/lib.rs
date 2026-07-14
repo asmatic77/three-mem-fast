@@ -109,7 +109,6 @@ pub fn open(path: &Path) -> Result<ThreeMFContainer, Error> {
         return Err(MissingRootPart);
     }
     validate_part_type(&mut zip_archive, &target_path)?;
-    
 
     Ok(ThreeMFContainer {
         archive: zip_archive,
@@ -233,7 +232,7 @@ impl ThreeMFContainer {
         }
         drop(xml_reader);
         self.geometry_stats = stats;
-        return Ok(())
+        Ok(())
     }
 
     fn parse_object(_object_element: &BytesStart, stats: &mut GeometryStatistics) {
