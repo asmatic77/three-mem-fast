@@ -109,6 +109,7 @@ pub fn open(path: &Path) -> Result<ThreeMFContainer, Error> {
         return Err(MissingRootPart);
     }
     validate_part_type(&mut zip_archive, &target_path)?;
+    
 
     Ok(ThreeMFContainer {
         archive: zip_archive,
@@ -175,7 +176,7 @@ fn find_attr_value<'a>(e: &'a BytesStart, key: &[u8]) -> Option<Cow<'a, [u8]>> {
 }
 
 impl ThreeMFContainer {
-    pub fn parse_root_part(&mut self) -> Result<GeometryStatistics, Error> {
+    pub fn parse_root_part(&mut self) -> Result<(), Error> {
         let root_file_path = self
             .root_part_path
             .strip_prefix("/")
@@ -232,7 +233,7 @@ impl ThreeMFContainer {
         }
         drop(xml_reader);
         self.geometry_stats = stats;
-        todo!()
+        return Ok(())
     }
 
     fn parse_object(_object_element: &BytesStart, stats: &mut GeometryStatistics) {
@@ -304,5 +305,15 @@ mod tests {
     fn open_finds_root_part_relationship() {
         let container = open(Path::new("fixtures/core/box.3mf")).unwrap();
         assert_eq!(container.root_part_path, "/3D/3dmodel.model");
+    }
+
+    #[test]
+    fn open_and_parses_geometry() {
+        let mut container = open(Path::new("fixtures/core/box.3mf")).unwrap();
+        container.parse_root_part().unwrap();
+        assert_eq!(container.geometry_stats.object_count, 1);
+        assert_eq!(container.geometry_stats.build_items, 1);
+        assert_eq!(container.geometry_stats.vertex_count, 8);
+        assert_eq!(container.geometry_stats.triangle_count, 12);
     }
 }
