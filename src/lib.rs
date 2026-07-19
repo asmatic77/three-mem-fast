@@ -115,7 +115,7 @@ impl MeshSink for Scene3mfBuilder {
             return Err(NoOpenObject);
         }
         const INITIAL_VERTEX_RESERVE: usize = 1024;
-        const INITIAL_TRIANGLE_RESERVE: usize = INITIAL_VERTEX_RESERVE*2;
+        const INITIAL_TRIANGLE_RESERVE: usize = INITIAL_VERTEX_RESERVE * 2;
         let mut vertices = Vec::new();
         vertices.try_reserve(INITIAL_VERTEX_RESERVE)?;
         let mut triangles = Vec::new();
