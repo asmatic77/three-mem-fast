@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::BufReader;
+use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
 use std::result::Result;
 use std::{borrow::Cow, fs::File};
@@ -27,6 +28,12 @@ pub enum Error {
     XmlFormat(#[from] quick_xml::Error),
     #[error("invalid utf-8 in target path: {0}")]
     InvalidUtf8(#[from] std::string::FromUtf8Error),
+    #[error("invalid utf-8 in attribute: {0}")]
+    WrongUtf8(#[from] std::str::Utf8Error),
+    #[error("Wrong float format: {0}")]
+    FloatFormatError(#[from] ParseFloatError),
+    #[error("Wrong integer format: {0}")]
+    IntFormatError(#[from] ParseIntError),
     #[error("Invalid content type for file {0}")]
     InvalidContentType(String),
     #[error("Missing attribute {0} in element {1}")]
@@ -255,7 +262,7 @@ fn validate_part_type(
                         let content_type_matches = find_attr_value(&e, CONTENT_TYPE_ATTR)
                             .is_some_and(|v| v.as_ref() == MODEL_CONTENT_TYPE);
                         if content_type_matches {
-                            println!("The 3mf root_part path has the correct content type");
+                            //println!("The 3mf root_part path has the correct content type");
                             return Ok(());
                         } else {
                             return Err(InvalidContentType(root_part_path.to_string()));
@@ -270,6 +277,42 @@ fn validate_part_type(
         buf.clear();
     }
     Err(InvalidContentType(root_part_path.to_string()))
+}
+
+fn find_vertex(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
+    let (mut x, mut y, mut z) = (None, None, None);
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"x" => x = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<f32>()?),
+            b"y" => y = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<f32>()?),
+            b"z" => z = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<f32>()?),
+            _ => {}
+        }
+    }
+    sink.vertex(
+        x.ok_or(MissingAttribute("x".to_string(), "vertex".to_string()))?,
+        y.ok_or(MissingAttribute("y".to_string(), "vertex".to_string()))?,
+        z.ok_or(MissingAttribute("z".to_string(), "vertex".to_string()))?,
+    )?;
+    Ok(())
+}
+
+fn find_triangle(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
+    let (mut v1, mut v2, mut v3) = (None, None, None);
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"v1" => v1 = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<u32>()?),
+            b"v2" => v2 = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<u32>()?),
+            b"v3" => v3 = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<u32>()?),
+            _ => {}
+        }
+    }
+    sink.triangle(
+        v1.ok_or(MissingAttribute("v1".to_string(), "triangle".to_string()))?,
+        v2.ok_or(MissingAttribute("v2".to_string(), "triangle".to_string()))?,
+        v3.ok_or(MissingAttribute("v3".to_string(), "triangle".to_string()))?,
+    )?;
+    Ok(())
 }
 
 fn find_attr_value<'a>(e: &'a BytesStart, key: &[u8]) -> Option<Cow<'a, [u8]>> {
@@ -315,11 +358,14 @@ impl Parser3mf {
                         MESH_TAG => (),
                         VERTICES_TAG => (),
                         VERTEX_TAG => {
-                            Parser3mf::parse_vertex(&e, sink, &mut stats)?;
+                            //Parser3mf::parse_vertex(&e, sink, &mut stats)?;
+                            find_vertex(&e, sink)?;
+                            stats.vertex_count += 1;
                         }
                         TRIANGLES_TAG => (),
                         TRIANGLE_TAG => {
-                            Parser3mf::parse_triangle(&e, sink, &mut stats)?;
+                            find_triangle(&e, sink)?;
+                            stats.triangle_count += 1;
                         }
                         BUILD_TAG => (),
                         ITEM_TAG => Parser3mf::parse_item(&e, sink, &mut stats)?,
@@ -356,8 +402,7 @@ impl Parser3mf {
         stats.object_count += 1;
         Ok(())
     }
-
-    fn parse_vertex(
+    fn _parse_vertex(
         vertex_element: &BytesStart,
         sink: &mut impl MeshSink,
         stats: &mut GeometryStatistics,
@@ -384,7 +429,7 @@ impl Parser3mf {
         Ok(())
     }
 
-    fn parse_triangle(
+    fn _parse_triangle(
         triangle_element: &BytesStart,
         sink: &mut impl MeshSink,
         stats: &mut GeometryStatistics,
