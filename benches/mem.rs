@@ -33,9 +33,14 @@ fn measure<T>(name: &str, f: impl FnOnce() -> T) {
 }
 
 fn main() {
-    let path = Path::new("fixtures/bench/Snakeman.3mf");
+    // Default to a committed fixture so it runs for anyone; override with
+    // THREEMF_BENCH_FILE to point at a large local file (the memory difference
+    // between streaming and materializing readers only shows on big files).
+    let path_str = std::env::var("THREEMF_BENCH_FILE")
+        .unwrap_or_else(|_| "fixtures/core/heartgears.3mf".to_string());
+    let path = Path::new(&path_str);
     let size_mb = std::fs::metadata(path).unwrap().len() as f64 / 1_048_576.0;
-    println!("File: {} ({size_mb:.0} MB compressed)\n", path.display());
+    println!("File: {} ({size_mb:.1} MB compressed)\n", path.display());
 
     // three-mem-fast: streaming, geometry only, f32 coords.
     measure("three-mem-fast", || {

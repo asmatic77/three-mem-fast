@@ -8,7 +8,12 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use three_mem_fast::{Scene3mfBuilder, open};
 
 fn bench_parse(c: &mut Criterion) {
-    let path = Path::new("fixtures/bench/Snakeman_low.3mf");
+    // Default to a committed fixture so the bench runs out-of-the-box for anyone.
+    // Override with THREEMF_BENCH_FILE to point at a large local file (e.g. the
+    // gitignored fixtures/bench/*.3mf) for the reference numbers in docs/benchmarks.md.
+    let path_str = std::env::var("THREEMF_BENCH_FILE")
+        .unwrap_or_else(|_| "fixtures/core/heartgears.3mf".to_string());
+    let path = Path::new(&path_str);
 
     // Pre-parse (outside the measured region) just to learn the vertex count,
     // used as the throughput divisor (Mverts/s).

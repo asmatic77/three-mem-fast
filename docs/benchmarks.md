@@ -14,6 +14,15 @@ requires a measured before/after (criterion, `cargo bench --bench parse`).
 
 ## Fixtures
 
+The reference numbers below were measured on large **local** files under `fixtures/bench/`, which are
+gitignored (too big for the repo). By default the benches use a committed fixture (`fixtures/core/heartgears.3mf`)
+so they run out-of-the-box; point them at a large file via the `THREEMF_BENCH_FILE` env var to reproduce these numbers:
+
+- Bash: `THREEMF_BENCH_FILE=fixtures/bench/Snakeman_low.3mf cargo bench --bench parse`
+- PowerShell: `$env:THREEMF_BENCH_FILE="fixtures/bench/Snakeman_low.3mf"; cargo bench --bench parse`
+
+Reference files used below:
+
 - `fixtures/bench/Snakeman_low.3mf` — 9.5 MB compressed → **47.2 MB of decompressed XML** (ratio 5.0x), **300,241 vertices**.
 - `fixtures/bench/Snakeman.3mf` — 81 MB compressed (~400 MB decompressed XML). Used for the memory comparison.
 
