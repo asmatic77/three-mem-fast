@@ -11,9 +11,26 @@ quick-xml = "0.41.0"
 thiserror = "2.0.18"
 zip = "8.6.0"
 
+# Optional deps used only by the cross-crate comparison benchmarks. Declared as
+# optional regular deps (Cargo does not allow optional dev-dependencies) and
+# gated behind the `compare` feature, so normal builds/tests never compile them
+# (they pull in nalgebra, parry3d, etc.). Enable with `--features compare`.
+lib3mf = { version = "0.1.6", optional = true }
+lib3mf-core = { version = "0.4.0", optional = true }
+peak_alloc = { version = "0.3.0", optional = true }
+threemf = { version = "0.8.0", optional = true }
+
+[features]
+compare = ["dep:lib3mf", "dep:lib3mf-core", "dep:peak_alloc", "dep:threemf"]
+
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [[bench]]
 name = "parse"
 harness = false
+
+[[bench]]
+name = "mem"
+harness = false
+required-features = ["compare"]

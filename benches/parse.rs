@@ -10,8 +10,8 @@ use three_mem_fast::{Scene3mfBuilder, open};
 fn bench_parse(c: &mut Criterion) {
     let path = Path::new("fixtures/bench/Snakeman_low.3mf");
 
-    // Pre-parseo (fuera de la medición) solo para conocer el nº de vértices,
-    // que usamos como divisor de throughput (Mverts/s).
+    // Pre-parse (outside the measured region) just to learn the vertex count,
+    // used as the throughput divisor (Mverts/s).
     let num_vertices = {
         let mut parser = open(path).unwrap();
         let mut builder = Scene3mfBuilder::default();
@@ -23,12 +23,12 @@ fn bench_parse(c: &mut Criterion) {
             .map(|o| o.mesh.vertices.len())
             .sum::<usize>() as u64
     };
-    // Tamaño comprimido del fichero, para dar MB/s al bench de "solo abrir".
+    // Compressed file size, to report MB/s for the "open only" bench.
     let file_size = std::fs::metadata(path).unwrap().len();
 
-    // Tamaño XML DESCOMPRIMIDO de las partes modelo (.model): suma de la talla
-    // sin comprimir de esas entries del ZIP. Es la métrica principal (MB/s de XML)
-    // que pide el CLAUDE.md, y la vara honesta para juzgar si vamos rápido o no.
+    // DECOMPRESSED XML size of the model parts (.model): sum of the uncompressed
+    // size of those ZIP entries. This is the primary metric (MB/s of XML) and the
+    // honest yardstick for judging whether we are fast.
     let xml_bytes = {
         let file = std::fs::File::open(path).unwrap();
         let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file)).unwrap();
@@ -43,7 +43,7 @@ fn bench_parse(c: &mut Criterion) {
     };
 
     eprintln!(
-        "[fixture] comprimido = {:.1} MB | XML descomprimido (.model) = {:.1} MB | ratio = {:.1}x | vértices = {}",
+        "[fixture] compressed = {:.1} MB | decompressed XML (.model) = {:.1} MB | ratio = {:.1}x | vertices = {}",
         file_size as f64 / 1_048_576.0,
         xml_bytes as f64 / 1_048_576.0,
         xml_bytes as f64 / file_size as f64,
@@ -52,10 +52,10 @@ fn bench_parse(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("parse");
 
-    // --- Benchmarks que producen geometría: throughput en bytes de XML descomprimido (MB/s) ---
+    // --- Benchmarks that produce geometry: throughput in bytes of decompressed XML (MB/s) ---
     group.throughput(Throughput::Bytes(xml_bytes));
 
-    // 1) end-to-end: abrir + parsear (coste total de cargar el 3mf)
+    // 1) end-to-end: open + parse (total cost of loading the 3mf)
     group.bench_function("end_to_end", |b| {
         b.iter(|| {
             let mut parser = open(black_box(path)).unwrap();
@@ -65,7 +65,7 @@ fn bench_parse(c: &mut Criterion) {
         });
     });
 
-    // 3) solo parsear: abrimos una vez FUERA del bucle medido
+    // 3) parse only: open once OUTSIDE the measured loop
     group.bench_function("parse_only", |b| {
         let mut parser = open(path).unwrap();
         b.iter(|| {
@@ -75,8 +75,8 @@ fn bench_parse(c: &mut Criterion) {
         });
     });
 
-    // 4) solo inflar: leer la entry del modelo (inflado DEFLATE) descartando los
-    //    bytes, SIN quick-xml ni parseo. Aísla el coste puro de descompresión.
+    // 4) inflate only: read the model entry (DEFLATE inflation) discarding the
+    //    bytes, WITHOUT quick-xml or parsing. Isolates the pure decompression cost.
     let model_name = {
         let file = File::open(path).unwrap();
         let mut archive = zip::ZipArchive::new(BufReader::new(file)).unwrap();
@@ -99,10 +99,47 @@ fn bench_parse(c: &mut Criterion) {
         });
     });
 
-    // --- Benchmark que NO produce geometría: throughput en bytes del zip ---
+    // Cross-crate comparison benches (B6). Gated behind the `compare` feature so
+    // normal `cargo bench --bench parse` stays cheap (these pull nalgebra, parry3d...).
+    // Run them with: cargo bench --bench parse --features compare
+    #[cfg(feature = "compare")]
+    {
+        // 5) `threemf` crate (serde, materializes the whole model).
+        //    Equivalent to our end_to_end: open + inflate + parse into memory.
+        group.bench_function("threemf_crate", |b| {
+            b.iter(|| {
+                let file = File::open(black_box(path)).unwrap();
+                let reader = BufReader::new(file);
+                black_box(threemf::read(reader).unwrap())
+            });
+        });
+
+        // 6) `lib3mf` crate (pure Rust, v0.1.6, young / "vibe-coded").
+        group.bench_function("lib3mf_crate", |b| {
+            b.iter(|| {
+                let file = File::open(black_box(path)).unwrap();
+                black_box(lib3mf::Model::from_reader(file).unwrap())
+            });
+        });
+
+        // 7) `lib3mf-core` crate (pure Rust, materializes the .model into a Vec).
+        group.bench_function("lib3mf_core_crate", |b| {
+            use lib3mf_core::archive::{ArchiveReader, ZipArchiver, find_model_path};
+            use lib3mf_core::parser::parse_model;
+            b.iter(|| {
+                let file = File::open(black_box(path)).unwrap();
+                let mut archiver = ZipArchiver::new(file).unwrap();
+                let model_path = find_model_path(&mut archiver).unwrap();
+                let model_data = archiver.read_entry(&model_path).unwrap();
+                black_box(parse_model(std::io::Cursor::new(model_data)).unwrap())
+            });
+        });
+    }
+
+    // --- Benchmark that does NOT produce geometry: throughput in zip bytes ---
     group.throughput(Throughput::Bytes(file_size));
 
-    // 2) solo abrir: File::open + ZipArchive + _rels/.rels + [Content_Types].xml
+    // 2) open only: File::open + ZipArchive + _rels/.rels + [Content_Types].xml
     group.bench_function("open_only", |b| {
         b.iter(|| black_box(open(black_box(path)).unwrap()));
     });

@@ -5,6 +5,15 @@ Cargo.lock
 CLAUDE.md
 .vscode/
 
+# Large benchmark fixtures: kept local, not versioned (would bloat the repo
+# forever). A synthetic generator script is the reproducible long-term answer.
+/fixtures/bench/
+
+# Leftover experiment junk, ignored for now (not cleaned up yet).
+/fixtures/core/box - copia.zip
+/fixtures/core/box-RootNoSchema/
+/fixtures/invalid/
+
 
 # Added by cargo
 #
