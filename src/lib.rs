@@ -303,9 +303,9 @@ fn find_triangle(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> 
     let (mut v1, mut v2, mut v3) = (None, None, None);
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
-            b"v1" => v1 = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<u32>()?),
-            b"v2" => v2 = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<u32>()?),
-            b"v3" => v3 = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<u32>()?),
+            b"v1" => v1 = atoi::atoi::<u32>(attr.value.as_ref()),
+            b"v2" => v2 = atoi::atoi::<u32>(attr.value.as_ref()),
+            b"v3" => v3 = atoi::atoi::<u32>(attr.value.as_ref()),
             _ => {}
         }
     }
