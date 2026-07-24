@@ -32,6 +32,8 @@ pub enum Error {
     WrongUtf8(#[from] std::str::Utf8Error),
     #[error("Wrong float format: {0}")]
     FloatFormatError(#[from] ParseFloatError),
+    #[error("Wrong float format: {0}")]
+    FFloatFormatError(#[from] fast_float2::Error),
     #[error("Wrong integer format: {0}")]
     IntFormatError(#[from] ParseIntError),
     #[error("Invalid content type for file {0}")]
@@ -283,9 +285,9 @@ fn find_vertex(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
     let (mut x, mut y, mut z) = (None, None, None);
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
-            b"x" => x = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<f32>()?),
-            b"y" => y = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<f32>()?),
-            b"z" => z = Some(std::str::from_utf8(attr.value.as_ref())?.parse::<f32>()?),
+            b"x" => x = Some(fast_float2::parse(attr.value.as_ref())?),
+            b"y" => y = Some(fast_float2::parse(attr.value.as_ref())?),
+            b"z" => z = Some(fast_float2::parse(attr.value.as_ref())?),
             _ => {}
         }
     }
