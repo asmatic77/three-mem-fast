@@ -7,7 +7,7 @@ use std::result::Result;
 
 pub use crate::parser::{Parser3mf, open};
 pub use crate::types::{
-    GeometryStatistics, Item, Mesh, Object, Scene3mf, Scene3mfBuilder, Transform, Triangle, Vertex,
+    GeometryStatistics, Item, Mesh, Object, Scene3mf, Scene3mfBuilder, Transform, Triangle,
 };
 
 pub trait MeshSink {
@@ -58,7 +58,7 @@ impl MeshSink for Scene3mfBuilder {
 
     fn vertex(&mut self, x: f32, y: f32, z: f32) -> Result<(), Error> {
         let obj = self.current.as_mut().ok_or(Error::NoOpenObject)?;
-        obj.mesh.vertices.push(Vertex { x, y, z });
+        obj.mesh.vertices.push(mint::Point3 { x, y, z });
         Ok(())
     }
     fn triangle(&mut self, v1: u32, v2: u32, v3: u32) -> Result<(), Error> {
