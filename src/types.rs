@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use mint::Point3;
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 #[derive(Debug, Default)]
