@@ -19,6 +19,7 @@ lib3mf = { version = "0.1.6", optional = true }
 lib3mf-core = { version = "0.4.0", optional = true }
 peak_alloc = { version = "0.3.0", optional = true }
 threemf = { version = "0.8.0", optional = true }
+mint = "0.5.9"
 
 [features]
 compare = ["dep:lib3mf", "dep:lib3mf-core", "dep:peak_alloc", "dep:threemf"]
