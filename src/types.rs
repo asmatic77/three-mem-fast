@@ -18,7 +18,7 @@ pub struct Triangle {
     pub(crate) v3: u32,
 }
 
-pub type Transform = [f32; 12];
+pub type Transform = mint::RowMatrix4x3<f32>;
 
 pub struct Mesh {
     pub vertices: Vec<Point3<f32>>,
@@ -34,7 +34,7 @@ pub struct Object {
 pub struct Item {
     pub object_id: u32,
     pub transform: Option<Transform>, // None means identity Transform
-    pub partname: String,
+    pub partname: Option<String>,
 }
 
 pub struct Scene3mf {

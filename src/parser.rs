@@ -6,7 +6,8 @@ use std::{borrow::Cow, fs::File};
 use zip::ZipArchive;
 
 use crate::error::Error::{
-    self, InvalidContentType, MissingAttribute, MissingFile, MissingRootPart, XmlFormat,
+    self, InvalidContentType, InvalidTransform, MissingAttribute, MissingFile, MissingRootPart,
+    XmlFormat,
 };
 
 use crate::MeshSink;
@@ -56,7 +57,6 @@ impl Parser3mf {
                         MESH_TAG => (),
                         VERTICES_TAG => (),
                         VERTEX_TAG => {
-                            //Parser3mf::parse_vertex(&e, sink, &mut stats)?;
                             find_vertex(&e, sink)?;
                             stats.vertex_count += 1;
                         }
@@ -66,7 +66,10 @@ impl Parser3mf {
                             stats.triangle_count += 1;
                         }
                         BUILD_TAG => (),
-                        ITEM_TAG => Parser3mf::parse_item(&e, sink, &mut stats)?,
+                        ITEM_TAG => {
+                            find_item(&e, sink)?;
+                            stats.build_items += 1;
+                        }
                         _ => (), // TODO: components!
                     }
                 }
@@ -98,21 +101,6 @@ impl Parser3mf {
             .ok_or(MissingAttribute("id".to_string(), "object".to_string()))?;
         sink.begin_object(id)?;
         stats.object_count += 1;
-        Ok(())
-    }
-
-    fn parse_item(
-        item_element: &BytesStart,
-        sink: &mut impl MeshSink,
-        stats: &mut GeometryStatistics,
-    ) -> Result<(), Error> {
-        let object_id = find_attr_value(item_element, b"objectid")
-            .as_deref()
-            .and_then(|bytes| std::str::from_utf8(bytes).ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .ok_or(MissingAttribute("objectid".to_string(), "item".to_string()))?;
-        stats.build_items += 1;
-        sink.build_item(object_id, None)?;
         Ok(())
     }
 }
@@ -164,6 +152,44 @@ fn validate_part_type(
         buf.clear();
     }
     Err(InvalidContentType(root_part_path.to_string()))
+}
+
+fn find_item(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
+    let mut objectid = None;
+    let mut transform: Option<[f32; 12]> = None;
+    let mut partnumber = None;
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"objectid" => objectid = atoi::atoi::<u32>(attr.value.as_ref()),
+            b"transform" => {
+                transform = {
+                    let data = attr
+                        .value
+                        .as_ref()
+                        .split(|&b| b.is_ascii_whitespace())
+                        .filter(|chunk| !chunk.is_empty())
+                        .map(fast_float2::parse::<f32, _>)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Some(data.try_into().map_err(|_| InvalidTransform)?)
+                }
+            }
+            b"partnumber" => {
+                partnumber = std::str::from_utf8(attr.value.as_ref())
+                    .ok()
+                    .map(String::from)
+            }
+            _ => {}
+        }
+    }
+    sink.build_item(
+        objectid.ok_or(MissingAttribute(
+            "object_id".to_string(),
+            "item".to_string(),
+        ))?,
+        transform,
+        partnumber,
+    )?;
+    Ok(())
 }
 
 fn find_vertex(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
@@ -311,5 +337,56 @@ mod tests {
         let obj = scene.objects.get(&1).expect("object id 1");
         assert_eq!(obj.mesh.vertices.len(), 8);
         assert_eq!(obj.mesh.triangles.len(), 12);
+    }
+
+    #[test]
+    fn parses_build_item_without_transform() {
+        // box.3mf has `<item objectid="1" />` — a build item with no transform.
+        let mut parser = open(Path::new("fixtures/core/box.3mf")).unwrap();
+        let mut builder = Scene3mfBuilder::default();
+        parser.parse_root_part(&mut builder).unwrap();
+        let scene = builder.into_scene();
+
+        assert_eq!(scene.build_items.len(), 1);
+        let item = &scene.build_items[0];
+        assert_eq!(item.object_id, 1);
+        assert!(item.transform.is_none());
+    }
+
+    #[test]
+    fn parses_item_transform() {
+        // Synthetic <item> with a transform: identity 3x3 + translation (10, 20, 30).
+        // No fixture is needed — we build the element in memory and feed it to find_item.
+        let e = quick_xml::events::BytesStart::new("item").with_attributes([
+            ("objectid", "7"),
+            ("transform", "1 0 0 0 1 0 0 0 1 10 20 30"),
+        ]);
+        let mut builder = Scene3mfBuilder::default();
+        find_item(&e, &mut builder).unwrap();
+        let scene = builder.into_scene();
+
+        assert_eq!(scene.build_items.len(), 1);
+        let item = &scene.build_items[0];
+        assert_eq!(item.object_id, 7);
+
+        // The 12 values must round-trip in 3MF order (rows), no transpose/reorder.
+        let matrix = item.transform.expect("transform should be present");
+        let values: [f32; 12] = matrix.into();
+        assert_eq!(
+            values,
+            [
+                1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 10.0, 20.0, 30.0
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_transform() {
+        // A transform with the wrong number of values (11, not 12) must error.
+        let e = quick_xml::events::BytesStart::new("item")
+            .with_attributes([("objectid", "1"), ("transform", "1 0 0 0 1 0 0 0 1 10 20")]);
+        let mut builder = Scene3mfBuilder::default();
+        let result = find_item(&e, &mut builder);
+        assert!(matches!(result, Err(Error::InvalidTransform)));
     }
 }

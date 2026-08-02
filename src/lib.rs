@@ -15,7 +15,12 @@ pub trait MeshSink {
     fn end_object(&mut self) -> Result<(), Error>;
     fn vertex(&mut self, x: f32, y: f32, z: f32) -> Result<(), Error>;
     fn triangle(&mut self, v1: u32, v2: u32, v3: u32) -> Result<(), Error>;
-    fn build_item(&mut self, object_id: u32, transform: Option<Transform>) -> Result<(), Error>;
+    fn build_item(
+        &mut self,
+        object_id: u32,
+        transform: Option<[f32; 12]>,
+        part_number: Option<String>,
+    ) -> Result<(), Error>;
 }
 
 impl MeshSink for Scene3mfBuilder {
@@ -46,11 +51,16 @@ impl MeshSink for Scene3mfBuilder {
         Ok(())
     }
 
-    fn build_item(&mut self, object_id: u32, transform: Option<Transform>) -> Result<(), Error> {
+    fn build_item(
+        &mut self,
+        object_id: u32,
+        transform: Option<[f32; 12]>,
+        partname: Option<String>,
+    ) -> Result<(), Error> {
         let item = Item {
             object_id,
-            transform,
-            partname: String::new(),
+            transform: transform.map(Into::into),
+            partname,
         };
         self.build_items.push(item);
         Ok(())

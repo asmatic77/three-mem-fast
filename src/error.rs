@@ -42,4 +42,7 @@ pub enum Error {
 
     #[error("Out of memory: could not reserve memory for data")]
     OutOfMemory(#[from] std::collections::TryReserveError),
+
+    #[error("Invalid transform")]
+    InvalidTransform,
 }
