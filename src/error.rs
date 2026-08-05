@@ -45,4 +45,7 @@ pub enum Error {
 
     #[error("Invalid transform")]
     InvalidTransform,
+
+    #[error("Unexpected 3mf tag {0}")]
+    UnexpectedTag(String),
 }

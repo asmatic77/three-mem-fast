@@ -5,7 +5,7 @@ use std::path::Path;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 
-use three_mem_fast::{Scene3mfBuilder, open};
+use three_mem_fast::{ObjectGeometry, Scene3mfBuilder, open};
 
 fn bench_parse(c: &mut Criterion) {
     // Default to a committed fixture so the bench runs out-of-the-box for anyone.
@@ -25,7 +25,10 @@ fn bench_parse(c: &mut Criterion) {
         scene
             .objects
             .values()
-            .map(|o| o.mesh.vertices.len())
+            .map(|o| match &o.geometry {
+                ObjectGeometry::Mesh(mesh) => mesh.vertices.len(),
+                ObjectGeometry::Components(_) => 0,
+            })
             .sum::<usize>() as u64
     };
     // Compressed file size, to report MB/s for the "open only" bench.

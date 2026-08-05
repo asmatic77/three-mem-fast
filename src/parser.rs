@@ -45,6 +45,8 @@ impl Parser3mf {
         const TRIANGLE_TAG: &[u8] = b"triangle";
         const BUILD_TAG: &[u8] = b"build";
         const ITEM_TAG: &[u8] = b"item";
+        const COMPONENTS_TAG: &[u8] = b"components";
+        const COMPONENT_TAG: &[u8] = b"component";
 
         let mut stats = GeometryStatistics::default();
         loop {
@@ -69,6 +71,10 @@ impl Parser3mf {
                         ITEM_TAG => {
                             find_item(&e, sink)?;
                             stats.build_items += 1;
+                        }
+                        COMPONENTS_TAG => (),
+                        COMPONENT_TAG => {
+                            find_component(&e, sink)?;
                         }
                         _ => (), // TODO: components!
                     }
@@ -162,16 +168,7 @@ fn find_item(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
         match attr.key.as_ref() {
             b"objectid" => objectid = atoi::atoi::<u32>(attr.value.as_ref()),
             b"transform" => {
-                transform = {
-                    let data = attr
-                        .value
-                        .as_ref()
-                        .split(|&b| b.is_ascii_whitespace())
-                        .filter(|chunk| !chunk.is_empty())
-                        .map(fast_float2::parse::<f32, _>)
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Some(data.try_into().map_err(|_| InvalidTransform)?)
-                }
+                transform = Some(parse_transform(attr.value.as_ref())?);
             }
             b"partnumber" => {
                 partnumber = std::str::from_utf8(attr.value.as_ref())
@@ -182,12 +179,42 @@ fn find_item(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
         }
     }
     sink.build_item(
-        objectid.ok_or(MissingAttribute(
-            "object_id".to_string(),
-            "item".to_string(),
-        ))?,
+        objectid.ok_or(MissingAttribute("objectid".to_string(), "item".to_string()))?,
         transform,
         partnumber,
+    )?;
+    Ok(())
+}
+
+#[inline]
+fn parse_transform(transform_data: &[u8]) -> Result<[f32; 12], Error> {
+    let data = transform_data
+        .split(|&b| b.is_ascii_whitespace())
+        .filter(|chunk| !chunk.is_empty())
+        .map(fast_float2::parse::<f32, _>)
+        .collect::<Result<Vec<_>, _>>()?;
+    let array: [f32; 12] = data.try_into().map_err(|_| InvalidTransform)?;
+    Ok(array)
+}
+
+fn find_component(e: &BytesStart, sink: &mut impl MeshSink) -> Result<(), Error> {
+    let mut objectid = None;
+    let mut transform: Option<[f32; 12]> = None;
+    for attr in e.attributes().flatten() {
+        match attr.key.as_ref() {
+            b"objectid" => objectid = atoi::atoi::<u32>(attr.value.as_ref()),
+            b"transform" => {
+                transform = Some(parse_transform(attr.value.as_ref())?);
+            }
+            _ => {}
+        }
+    }
+    sink.component(
+        objectid.ok_or(MissingAttribute(
+            "objectid".to_string(),
+            "component".to_string(),
+        ))?,
+        transform,
     )?;
     Ok(())
 }
@@ -294,7 +321,7 @@ pub fn open(path: &Path) -> Result<Parser3mf, Error> {
 mod tests {
 
     use super::*;
-    use crate::types::Scene3mfBuilder;
+    use crate::types::{ObjectGeometry, Scene3mfBuilder};
 
     #[test]
     fn open_finds_root_part_relationship() {
@@ -322,8 +349,11 @@ mod tests {
         assert_eq!(builder.objects.len(), 1);
         assert_eq!(builder.build_items.len(), 1);
         let obj = builder.objects.get(&1).expect("object id 1");
-        assert_eq!(obj.mesh.vertices.len(), 8);
-        assert_eq!(obj.mesh.triangles.len(), 12);
+        let ObjectGeometry::Mesh(mesh) = &obj.geometry else {
+            panic!("object 1 should be a mesh");
+        };
+        assert_eq!(mesh.vertices.len(), 8);
+        assert_eq!(mesh.triangles.len(), 12);
     }
 
     #[test]
@@ -335,8 +365,11 @@ mod tests {
         assert_eq!(scene.objects.len(), 1);
         assert_eq!(scene.build_items.len(), 1);
         let obj = scene.objects.get(&1).expect("object id 1");
-        assert_eq!(obj.mesh.vertices.len(), 8);
-        assert_eq!(obj.mesh.triangles.len(), 12);
+        let ObjectGeometry::Mesh(mesh) = &obj.geometry else {
+            panic!("object 1 should be a mesh");
+        };
+        assert_eq!(mesh.vertices.len(), 8);
+        assert_eq!(mesh.triangles.len(), 12);
     }
 
     #[test]
@@ -388,5 +421,55 @@ mod tests {
         let mut builder = Scene3mfBuilder::default();
         let result = find_item(&e, &mut builder);
         assert!(matches!(result, Err(Error::InvalidTransform)));
+    }
+
+    #[test]
+    fn parses_object_with_components() {
+        // Synthetic object composed of two components (no fixture has components).
+        // Drive the builder through begin_object -> component(s) -> end_object.
+        let mut builder = Scene3mfBuilder::default();
+        builder.begin_object(10).unwrap();
+
+        let c1 = quick_xml::events::BytesStart::new("component")
+            .with_attributes([("objectid", "2"), ("transform", "1 0 0 0 1 0 0 0 1 5 6 7")]);
+        find_component(&c1, &mut builder).unwrap();
+
+        // Second component has no transform (None means identity).
+        let c2 =
+            quick_xml::events::BytesStart::new("component").with_attributes([("objectid", "3")]);
+        find_component(&c2, &mut builder).unwrap();
+
+        builder.end_object().unwrap();
+        let scene = builder.into_scene();
+
+        // The object must be stored as Components, not Mesh.
+        let obj = scene.objects.get(&10).expect("object 10");
+        let ObjectGeometry::Components(components) = &obj.geometry else {
+            panic!("object 10 should be composed of components");
+        };
+        assert_eq!(components.len(), 2);
+
+        // First component: objectid 2, with the given transform (order preserved).
+        assert_eq!(components[0].object_id, 2);
+        let t: [f32; 12] = components[0].transform.expect("c1 has a transform").into();
+        assert_eq!(
+            t,
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0]
+        );
+
+        // Second component: objectid 3, no transform.
+        assert_eq!(components[1].object_id, 3);
+        assert!(components[1].transform.is_none());
+    }
+
+    #[test]
+    fn component_requires_objectid() {
+        // A <component> without objectid must error.
+        let mut builder = Scene3mfBuilder::default();
+        builder.begin_object(10).unwrap();
+        let c = quick_xml::events::BytesStart::new("component")
+            .with_attributes([("transform", "1 0 0 0 1 0 0 0 1 0 0 0")]);
+        let result = find_component(&c, &mut builder);
+        assert!(matches!(result, Err(Error::MissingAttribute(_, _))));
     }
 }

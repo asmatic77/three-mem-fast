@@ -25,10 +25,20 @@ pub struct Mesh {
     pub triangles: Vec<Triangle>,
 }
 
+pub struct Component {
+    pub object_id: u32,
+    pub transform: Option<Transform>,
+}
+
+pub enum ObjectGeometry {
+    Mesh(Mesh),
+    Components(Vec<Component>),
+}
+
 pub struct Object {
     pub id: u32,
-    pub mesh: Mesh,
     pub name: String,
+    pub geometry: ObjectGeometry,
 }
 
 pub struct Item {
@@ -42,9 +52,17 @@ pub struct Scene3mf {
     pub build_items: Vec<Item>,
 }
 
+pub struct TmpObject {
+    pub id: u32,
+    pub name: String,
+    pub vertices: Vec<Point3<f32>>,
+    pub triangles: Vec<Triangle>,
+    pub components: Vec<Component>,
+}
+
 #[derive(Default)]
 pub struct Scene3mfBuilder {
     pub objects: HashMap<u32, Object>,
     pub build_items: Vec<Item>,
-    pub current: Option<Object>,
+    pub current: Option<TmpObject>,
 }
